@@ -83,15 +83,16 @@ def opinion_metric(pred, true, tagset):
             pred_span_length += is_pred.sum()
             true_span_length += is_true.sum()
             overlap_length += (is_true & is_pred).sum()
-            
-        binary_precision = n_pred_spans_which_overlap_with_some_true_span/n_pred_spans
-        binary_recall = n_true_spans_which_overlap_with_some_pred_span/n_true_spans
-        binary_F1 = 2 * binary_precision * binary_recall / (binary_precision + binary_recall)
+        
+        epsilon = 1e-23
+        binary_precision = n_pred_spans_which_overlap_with_some_true_span/(n_pred_spans + epsilon)
+        binary_recall = n_true_spans_which_overlap_with_some_pred_span/(n_true_spans + epsilon)
+        binary_F1 = 2 * binary_precision * binary_recall / (binary_precision + binary_recall + epsilon)
         result[tag] = {'binary_precision': binary_precision, 'binary_recall': binary_recall, 'binary_F1': binary_F1}
         
-        proportional_precision = overlap_length/pred_span_length
-        proportional_recall = overlap_length/true_span_length
-        proportional_F1 = 2 * proportional_precision * proportional_recall / (proportional_precision + proportional_recall)
+        proportional_precision = overlap_length/(pred_span_length + epsilon)
+        proportional_recall = overlap_length/(true_span_length + epsilon)
+        proportional_F1 = 2 * proportional_precision * proportional_recall / (proportional_precision + proportional_recall + epsilon)
         result[tag].update({'proportional_precision': proportional_precision, 'proportional_recall': proportional_recall, 'proportional_F1': proportional_F1})
     
     return result

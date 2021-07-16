@@ -11,7 +11,7 @@ COPY data /data
 COPY run.sh /
 
 # command to run
-# CMD ["bash", "./run.sh"]
+CMD ["bash", "./run.sh"]
 
 # service & web port
 EXPOSE 6001

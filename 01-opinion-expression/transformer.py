@@ -22,8 +22,8 @@ def prepare_data(data_file, datasplit_dir, bert_name, maxlen, batch_size):
     def get_dataloader(fileids, shuffle=False):
         idx = np.isin(fileids_arr, fileids)
         input_ids_tensor = torch.LongTensor(input_ids_arr[idx].reshape(-1, maxlen))
-        attn_mask_tensor = torch.Tensor(attn_mask_arr[idx].reshape(-1, maxlen))
-        labels_tensor = torch.Tensor(labels_arr[idx].reshape(-1, maxlen))
+        attn_mask_tensor = torch.FloatTensor(attn_mask_arr[idx].reshape(-1, maxlen))
+        labels_tensor = torch.LongTensor(labels_arr[idx].reshape(-1, maxlen))
         return DataLoader(TensorDataset(input_ids_tensor, attn_mask_tensor, labels_tensor), shuffle=shuffle, batch_size=batch_size)
 
     df = pd.read_csv(data_file, index_col=None, sep='\t')
@@ -83,8 +83,8 @@ def plot_data(model_dir, train_set_avg_train_losses, train_set_avg_eval_losses, 
     plt.legend()
     plt.title('loss vs epoch')
     plt.savefig(os.path.join(model_dir, 'loss.png'))
-    plt.close('all')
 
+    plt.close('all')
     plt.plot(epochs, train_set_avg_binary_f1s, 'b-o', label='train set: avg binary F1')
     plt.plot(epochs, dev_set_avg_binary_f1s, 'b-o', label='train set: avg binary F1')
     plt.legend()
@@ -97,11 +97,11 @@ def evaluate(dataloader, model, tagset, config):
 
     for batch in dataloader:
         batch_input_ids, batch_attn_mask, batch_labels = [tensor.to(config.device) for tensor in batch]
+        batch_crf_attn_mask = batch_attn_mask.byte().to(config.device)
         with torch.no_grad():
-            loss, logits = model(batch_input_ids, batch_attn_mask, batch_labels)
-        logits = logits.detach().cpu().numpy()
+            loss, pred = model(batch_input_ids, batch_attn_mask, batch_crf_attn_mask, batch_labels)
         batch_labels = batch_labels.detach().cpu().numpy()
-        pred_list.extend([list(sentence_pred) for sentence_pred in np.argmax(logits, axis=2)])
+        pred_list.extend(pred)
         labels_list.extend([list(sentence_labels) for sentence_labels in batch_labels])
         eval_loss += loss.item()
     
@@ -136,11 +136,12 @@ def train_and_evaluate_one_fold(dev_dataloader, train_dataloader, test_dataloade
 
         for step, batch in enumerate(train_dataloader):
             batch_input_ids, batch_attn_mask, batch_labels = [tensor.to(config.device) for tensor in batch]
+            batch_crf_attn_mask = batch_attn_mask.byte().to(config.device)
             model.zero_grad()
             if config.use_class_weights:
-                loss, _ = model(batch_input_ids, batch_attn_mask, batch_labels, class_weights=class_weights.to(config.device))
+                loss, _ = model(batch_input_ids, batch_attn_mask, batch_crf_attn_mask, batch_labels, class_weights=class_weights.to(config.device))
             else:
-                loss, _ = model(batch_input_ids, batch_attn_mask, batch_labels)
+                loss, _ = model(batch_input_ids, batch_attn_mask, batch_crf_attn_mask, batch_labels)
             loss.backward()
             train_loss += loss.item()
             torch.nn.utils.clip_grad_norm_(parameters=model.parameters(), max_norm=config.max_grad_norm)
@@ -217,10 +218,24 @@ def train_and_evaluate_all_folds(config):
     for fold, (train_dataloader, test_dataloader, class_weights) in enumerate(zip(train_dataloaders, test_dataloaders, class_weights_list)):
         print(f'fold {fold}')
         fold_model_dir = os.path.join(model_dir, f'fold{fold}')
-        model = opinionBERT(config.bert_name, len(tagset), config.num_layers, config.hidden_size, config.dropout_prob)
+        model = opinionBERT(bert_name = config.bert_name, num_labels = len(tagset), num_layers = config.num_layers, hidden_size = config.hidden_size, dropout_prob = config.dropout_prob, rnn_type = config.rnn_type, bidirectional = config.bidirectional, use_crf = config.use_crf, freeze_bert = config.freeze_bert)
         model.to(config.device)
         optimizer = AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
         total_steps = len(train_dataloader) * config.max_epochs
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=total_steps)
         train_and_evaluate_one_fold(dev_dataloader, train_dataloader, test_dataloader, class_weights, tagset, model, optimizer, scheduler, fold_model_dir, config)
         print(f'fold {fold} done\n\n\n\n')
+
+def evaluate_all_folds(config):
+    model_dir = os.path.join(MODEL_FOLDER, config.model_name)
+    data_file = os.path.join(DATA_FOLDER, 'data.csv')
+    datasplit_dir = os.path.join(SRL4ORL_DATASPLIT_FOLDER, config.split_type)
+    dev_dataloader, train_dataloaders, test_dataloaders, class_weights_list, tagset = prepare_data(data_file, datasplit_dir, config.bert_name, config.maxlen, config.batch_size)
+
+    for fold, (train_dataloader, test_dataloader, class_weights) in enumerate(zip(train_dataloaders, test_dataloaders, class_weights_list)):
+        print(f'fold {fold}')
+        fold_model_dir = os.path.join(model_dir, f'fold{fold}')
+        model = opinionBERT(bert_name = config.bert_name, num_labels = len(tagset), num_layers = config.num_layers, hidden_size = config.hidden_size, dropout_prob = config.dropout_prob, rnn_type = config.rnn_type, bidirectional = config.bidirectional, use_crf = config.use_crf, freeze_bert = config.freeze_bert)
+        model.load_state_dict(torch.load(os.path.join(fold_model_dir, "weights.pt")))
+        _, _, test_set_eval_result = evaluate(test_dataloader, model, tagset, config)
+        print(test_set_eval_result)

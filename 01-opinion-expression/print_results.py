@@ -17,11 +17,12 @@ def print_results(model_name):
     for fold in range(4):
         logfile = os.path.join(model_folder, f"fold{fold}", "log.txt")
         lines = open(logfile).read().split("\n")
+        dev_line_index = [i for i, line in enumerate(lines) if re.search("dev set:", line) is not None][0] + 1
         
         for i in range(2):
             for j in range(2):
                 for k in range(2):
-                    line = lines[26 + 7*i + 2*j + k]
+                    line = lines[dev_line_index + 7*i + 2*j + k]
                     results[i, j, k] += parse_log_line(line)
     
     results = results/4
