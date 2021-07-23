@@ -73,6 +73,7 @@ def create_tokenized_tuples(doc_tuples, tokenized_sentences):
                         tokenized_sentences[target_index[0]]["dse"].append({
                             "dse": dse_span,
                             "attitude": attitude_span,
+                            "opinion": dse_span if dse_span is not None else attitude_span,
                             "holder-type": holder_type,
                             "holder": holder_span,
                             "target-type": target_type,
@@ -116,7 +117,7 @@ def remove_newline_characters(tokenized_sentences):
 
         for dse in tokenized_sentence["dse"]:
             new_dse = dse
-            for key in ["dse", "attitude", "holder", "target"]:
+            for key in ["dse", "attitude", "holder", "target", "opinion"]:
                 span = dse[key]
                 if span is not None:
                     corrected_span = correct_span(span, tokenized_sentence["tokens"], number_of_newline_characters)
@@ -124,7 +125,7 @@ def remove_newline_characters(tokenized_sentences):
                         n_tuples_removed += 1
                         break
                     else:
-                        new_dse[key] = NoIndent(corrected_span)
+                        new_dse[key] = corrected_span
             else:
                 new_dse_arr.append(new_dse)
 
@@ -132,6 +133,14 @@ def remove_newline_characters(tokenized_sentences):
         tokenized_sentence["tokens"] = [token for token in tokenized_sentence["tokens"] if token != "\n"]
     
     return n_tuples_removed
+
+def format_json(sentences):
+    for sentence in sentences:
+        sentence["tokens"] = NoIndent(sentence["tokens"])
+        for ex in sentence["dse"]:
+            for key in ["dse", "attitude", "holder", "target", "opinion"]:
+                if ex[key] is not None:
+                    ex[key] = NoIndent(ex[key])
 
 def tokenize_mpqa2(mpqa2_folder, results_folder):
     doc_ids_file = os.path.join(mpqa2_folder, "doclist.attitudeSubset")
@@ -211,11 +220,13 @@ def tokenize_mpqa2(mpqa2_folder, results_folder):
         for tokenized_sentence in tokenized_sentences:
             new_tokenized_sentence = {
                 "text": tokenized_sentence["text"],
-                "tokens": NoIndent(tokenized_sentence["tokens"]),
+                "tokens": tokenized_sentence["tokens"],
                 "dse": tokenized_sentence["dse"]
             }
             new_tokenized_sentences.append(new_tokenized_sentence)
         
+        format_json(new_tokenized_sentences)
+
         folder = os.path.join(results_folder, "mpqa2-processed", doc_id)
         os.makedirs(folder, exist_ok=True)
         file = os.path.join(folder, "tokenized.json")

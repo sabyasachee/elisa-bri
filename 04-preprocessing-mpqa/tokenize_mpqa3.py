@@ -5,6 +5,7 @@ import numpy as np
 from tqdm import tqdm
 from collections import Counter, defaultdict
 from spacy.lang.en import English
+import re
 
 import config
 from custom_json_encoder import NoIndent, MyEncoder
@@ -165,10 +166,10 @@ def remove_newline_characters(tokenized_sentences):
 
     def correct_span(span, tokens, number_of_newline_characters):
 
-        while span[0] <= span[1] and tokens[span[0]] == "\n":
+        while span[0] <= span[1] and re.match("^\s+$", tokens[span[0]]):
             span[0] += 1
         
-        while span[0] <= span[1] and tokens[span[1]] == "\n":
+        while span[0] <= span[1] and re.match("^\s+$", tokens[span[1]]):
             span[1] -= 1
         
         if span[0] <= span[1]:
@@ -183,8 +184,8 @@ def remove_newline_characters(tokenized_sentences):
         number_of_newline_characters = [0 for _ in range(len(tokenized_sentence["tokens"]))]
         c = 0
         for i, token in enumerate(tokenized_sentence["tokens"]):
-            number_of_newline_characters[i] = c + (token == "\n")
-            c += token == "\n"
+            number_of_newline_characters[i] = c + (re.match("^\s+$", token) is not None)
+            c += re.match("^\s+$", token) is not None
 
         new_dse_arr = []
 
@@ -203,7 +204,7 @@ def remove_newline_characters(tokenized_sentences):
                 new_dse_arr.append(new_dse)
 
         tokenized_sentence["dse"] = new_dse_arr
-        tokenized_sentence["tokens"] = [token for token in tokenized_sentence["tokens"] if token != "\n"]
+        tokenized_sentence["tokens"] = [token for token in tokenized_sentence["tokens"] if not re.match("^\s+$", token)]
     
     return n_tuples_removed
 
