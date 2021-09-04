@@ -91,7 +91,7 @@ def find_token_index_of_span(sentence_index, span, tokenized_sentences):
         j = [k for k, (_, y) in enumerate(token_offsets) if span["end"] == y + sentence_offset]
         
         if len(i) == 1 and len(j) == 1:
-            return [sentence_index, i[0], j[0]]
+            return [sentence_index, i[0], j[0] + 1]
 
 def is_equal_token_indexes(token_index_1, token_index_2):
     return token_index_1 is not None and token_index_2 is not None and token_index_1[0] == token_index_2[0]
@@ -109,7 +109,11 @@ def create_tokenized_tuples(doc_tuples, tokenized_sentences):
 
         if attitude is not None and attitude["attitude-type"] is not None and target is not None and target_index is not None and holder is not None:
 
+            tokenized_sentence = tokenized_sentences[target_index[0]]
+            tokens = tokenized_sentence["tokens"]
+
             target_span = [target_index[1], target_index[2]]
+            target_tokens = tokens[target_span[0]: target_span[1]]
             if "matched-etargets" in target:
                 target_type = "span"
             else:
@@ -120,38 +124,53 @@ def create_tokenized_tuples(doc_tuples, tokenized_sentences):
                 if isinstance(holder, dict):
                     holder_span = [holder_index[1], holder_index[2]]
                     holder_type = "span"
+                    holder_tokens = tokens[holder_span[0]: holder_span[1]]
                 else:
                     holder_span = None
                     holder_type = holder
+                    holder_tokens = []
 
                 attitude_type = attitude["attitude-type"]
 
                 if dse is not None and dse_index is not None and dse_index[0] == target_index[0] and attitude_index is not None and attitude_index[0] == target_index[0]:
                     dse_span = [dse_index[1], dse_index[2]]
                     attitude_span = [attitude_index[1], attitude_index[2]]
+                    dse_tokens = tokens[dse_span[0]: dse_span[1]]
+                    attitude_tokens = tokens[attitude_span[0]: attitude_span[1]]
                 
                 elif dse is not None and dse_index is not None and dse_index[0] == target_index[0]:
                     dse_span = [dse_index[1], dse_index[2]]
                     attitude_span = None
+                    dse_tokens = tokens[dse_span[0]: dse_span[1]]
+                    attitude_tokens = []
 
                 elif attitude_index is not None and attitude_index[0] == target_index[0]:
                     dse_span = None
                     attitude_span = [attitude_index[1], attitude_index[2]]
+                    dse_tokens = []
+                    attitude_tokens = tokens[attitude_span[0]: attitude_span[1]]
 
                 else:
                     dse_span = None
                     attitude_span = None
+                    dse_tokens = []
+                    attitude_tokens = []
 
                 if dse_span is not None or attitude_span is not None:
                     if (isinstance(holder, dict) and holder_index is not None and holder_index[0] == target_index[0]) or holder == "writer" or holder == "implicit":
-                        tokenized_sentences[target_index[0]]["dse"].append({
-                            "dse": dse_span,
-                            "attitude": attitude_span,
-                            "opinion": dse_span if dse_span is not None else attitude_span,
+                        tokenized_sentence["dse"].append({
+                            "dse-span": dse_span,
+                            "dse-tokens": dse_tokens,
+                            "attitude-span": attitude_span,
+                            "attitude-tokens": attitude_tokens,
+                            "opinion-span": dse_span if dse_span is not None else attitude_span,
+                            "opinion-tokens": dse_tokens if dse_span is not None else attitude_tokens,
                             "holder-type": holder_type,
-                            "holder": holder_span,
+                            "holder-span": holder_span,
+                            "holder-tokens": holder_tokens,
                             "target-type": target_type,
-                            "target": target_span,
+                            "target-span": target_span,
+                            "target-tokens": target_tokens,
                             "attitude-type": attitude_type
                         })
                         n_tokenized_tuples += 1
@@ -162,20 +181,20 @@ def create_tokenized_tuples(doc_tuples, tokenized_sentences):
         
     return n_tuples, n_sentiment_tuples, n_two_sentence_tuples, n_sentiment_two_sentence_tuples, n_tokenized_tuples, n_sentiment_tokenized_tuples
 
+def correct_span(span, tokens, number_of_newline_characters):
+
+    while span[0] < span[1] and re.match("^\s+$", tokens[span[0]]):
+        span[0] += 1
+    
+    while span[0] < span[1] and re.match("^\s+$", tokens[span[1]-1]):
+        span[1] -= 1
+    
+    if span[0] < span[1]:
+        span[0] -= number_of_newline_characters[span[0]]
+        span[1] -= number_of_newline_characters[span[1]-1]
+        return span
+
 def remove_newline_characters(tokenized_sentences):
-
-    def correct_span(span, tokens, number_of_newline_characters):
-
-        while span[0] <= span[1] and re.match("^\s+$", tokens[span[0]]):
-            span[0] += 1
-        
-        while span[0] <= span[1] and re.match("^\s+$", tokens[span[1]]):
-            span[1] -= 1
-        
-        if span[0] <= span[1]:
-            span[0] -= number_of_newline_characters[span[0]]
-            span[1] -= number_of_newline_characters[span[1]]
-            return span
 
     n_tuples_removed = 0
 
@@ -191,7 +210,7 @@ def remove_newline_characters(tokenized_sentences):
 
         for dse in tokenized_sentence["dse"]:
             new_dse = dse
-            for key in ["dse", "attitude", "holder", "target", "opinion"]:
+            for key in ["dse-span", "attitude-span", "holder-span", "target-span", "opinion-span"]:
                 span = dse[key]
                 if span is not None:
                     corrected_span = correct_span(span, tokenized_sentence["tokens"], number_of_newline_characters)
@@ -211,14 +230,16 @@ def remove_newline_characters(tokenized_sentences):
 def format_json(sentences):
     for sentence in sentences:
         sentence["tokens"] = NoIndent(sentence["tokens"])
-        sentence["dse-opinion"] = NoIndent(sentence["dse-opinion"])
-        sentence["dse-entity"] = NoIndent(sentence["dse-entity"])
-        sentence["dse-event"] = NoIndent(sentence["dse-event"])
-        sentence["dse-holder"] = NoIndent(sentence["dse-holder"])
+        # sentence["dse-opinion"] = NoIndent(sentence["dse-opinion"])
+        # sentence["dse-entity"] = NoIndent(sentence["dse-entity"])
+        # sentence["dse-event"] = NoIndent(sentence["dse-event"])
+        # sentence["dse-holder"] = NoIndent(sentence["dse-holder"])
         for ex in sentence["dse"]:
-            for key in ["dse", "attitude", "holder", "target", "opinion"]:
-                if ex[key] is not None:
-                    ex[key] = NoIndent(ex[key])
+            for prefix in ["dse", "attitude", "holder", "target", "opinion"]:
+                for suffix in ["span", "tokens"]:
+                    key = prefix + "-" + suffix
+                    if ex[key] is not None:
+                        ex[key] = NoIndent(ex[key])
 
 def tokenize_mpqa3(mpqa3_folder, results_folder):
     doc_ids_file = os.path.join(mpqa3_folder, "doclist")
@@ -311,7 +332,7 @@ def tokenize_mpqa3(mpqa3_folder, results_folder):
             }
             new_tokenized_sentences.append(new_tokenized_sentence)
 
-        create_label_arrs(new_tokenized_sentences)
+        # create_label_arrs(new_tokenized_sentences)
 
         format_json(new_tokenized_sentences)
 
