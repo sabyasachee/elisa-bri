@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import pandas as pd
 from tqdm import tqdm
@@ -107,12 +108,15 @@ def create_tokenized_tuples(doc_tuples, tokenized_sentences):
         
     return n_tuples, n_sentiment_tuples, n_two_sentence_tuples, n_sentiment_two_sentence_tuples, n_tokenized_tuples, n_sentiment_tokenized_tuples
 
+def is_whitespace(text):
+    return re.match("^\s*$", text) is not None
+
 def correct_span(span, tokens, number_of_newline_characters):
 
-    while span[0] < span[1] and tokens[span[0]] == "\n":
+    while span[0] < span[1] and is_whitespace(tokens[span[0]]):
         span[0] += 1
     
-    while span[0] < span[1] and tokens[span[1]-1] == "\n":
+    while span[0] < span[1] and is_whitespace(tokens[span[1]-1]):
         span[1] -= 1
     
     if span[0] < span[1]:
@@ -120,7 +124,7 @@ def correct_span(span, tokens, number_of_newline_characters):
         span[1] -= number_of_newline_characters[span[1]-1]
         return span
 
-def remove_newline_characters(tokenized_sentences):
+def remove_whitespace_tokens(tokenized_sentences):
 
     n_tuples_removed = 0
 
@@ -129,8 +133,9 @@ def remove_newline_characters(tokenized_sentences):
         number_of_newline_characters = [0 for _ in range(len(tokenized_sentence["tokens"]))]
         c = 0
         for i, token in enumerate(tokenized_sentence["tokens"]):
-            number_of_newline_characters[i] = c + (token == "\n")
-            c += token == "\n"
+            flag = is_whitespace(token)
+            number_of_newline_characters[i] = c + flag
+            c += flag
 
         new_dse_arr = []
 
@@ -149,7 +154,8 @@ def remove_newline_characters(tokenized_sentences):
                 new_dse_arr.append(new_dse)
 
         tokenized_sentence["dse"] = new_dse_arr
-        tokenized_sentence["tokens"] = [token for token in tokenized_sentence["tokens"] if token != "\n"]
+        tokenized_sentence["tokens"] = [token for token in tokenized_sentence["tokens"] if not is_whitespace(token)]
+        tokenized_sentence["text"] = re.sub("\s+", " ", tokenized_sentence["text"]).strip()
     
     return n_tuples_removed
 
@@ -231,7 +237,7 @@ def tokenize_mpqa2(mpqa2_folder, results_folder):
         n_tokenized_tuples += doc_n_tokenized_tuples
         n_sentiment_tokenized_tuples += doc_n_sentiment_tokenized_tuples
         
-        doc_n_tuples_removed = remove_newline_characters(tokenized_sentences)
+        doc_n_tuples_removed = remove_whitespace_tokens(tokenized_sentences)
         n_tokenized_tuples_after_correction += doc_n_tokenized_tuples - doc_n_tuples_removed
 
         records.extend(doc_records)
@@ -259,7 +265,7 @@ def tokenize_mpqa2(mpqa2_folder, results_folder):
     print("{} sentiment tuples have holder within one sentence of the target".format(n_sentiment_two_sentence_tuples))
     print("{} tuples were tokenized".format(n_tokenized_tuples))
     print("{} sentiment tuples were tokenized".format(n_sentiment_tokenized_tuples))
-    print("{} tokenized tuples remain after removing newline tokens".format(n_tokenized_tuples_after_correction))
+    print("{} tokenized tuples remain after removing whitespace tokens".format(n_tokenized_tuples_after_correction))
 
     new_records = []
 

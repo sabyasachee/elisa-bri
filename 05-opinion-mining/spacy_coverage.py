@@ -12,7 +12,7 @@ def find_performance(gold_spans, pred_spans):
 
 def spacy_coverage():
     nlp = spacy.load("en_core_web_sm")
-    mpqa3_doc_ids = open(os.path.join(config.MPQA3_FOLDER, "doclist")).read().strip().split("\n")
+    mpqa3_doc_ids = open(os.path.join(config.MPQA3_FOLDER, "doclist")).read().splitlines()
     mpqa3_docs = [json.load(open(os.path.join(config.MPQA3_PROCESSED_FOLDER, doc_id, "tokenized.json"))) for doc_id in mpqa3_doc_ids]
 
     target_entities, target_events, inside_target_entities, inside_target_events = set(), set(), set(), set()
@@ -22,14 +22,14 @@ def spacy_coverage():
         for j, sentence in enumerate(doc):
 
             spans = set()
-            doc = nlp(re.sub("\s+", " ", sentence["text"]))
+            doc = nlp(sentence["text"])
 
             for ex in sentence["dse"]:
                 if ex["target-type"] == "span":
-                    spans.add(tuple(ex["target"]))
+                    spans.add(tuple(ex["target-span"]))
             
             for ex in sentence["dse"]:
-                span = tuple(ex["target"])
+                span = tuple(ex["target-span"])
                 if ex["target-type"] == "entity":
                     target_entities.add((i, j, span[0], span[1]))
                 elif ex["target-type"] == "event":
@@ -37,7 +37,7 @@ def spacy_coverage():
                 
                 if ex["target-type"] in ["entity", "event"]:
                     for tspan in spans:
-                        if tspan[0] <= span[0] <= span[1] <= tspan[1]:
+                        if tspan[0] <= span[0] and span[1] <= tspan[1]:
                             if ex["target-type"] == "entity":
                                 inside_target_entities.add((i, j, span[0], span[1]))
                             else:
@@ -45,24 +45,24 @@ def spacy_coverage():
                             break
             
             for ent in doc.ents:
-                span = (ent.start, ent.end - 1)
+                span = (ent.start, ent.end)
                 for tspan in spans:
-                    if tspan[0] <= span[0] <= span[1] <= tspan[1]:
+                    if tspan[0] <= span[0] and span[1] <= tspan[1]:
                         spacy_entities.add((i, j, span[0], span[1]))
                         break
             
             for noun_chunk in doc.noun_chunks:
-                span = (noun_chunk.root.i, noun_chunk.root.i)
+                span = (noun_chunk.root.i, noun_chunk.root.i + 1)
                 for tspan in spans:
-                    if tspan[0] <= span[0] <= tspan[1]:
+                    if tspan[0] <= span[0] < tspan[1]:
                         spacy_nouns.add((i, j, span[0], span[1]))
                         break
             
             for token in doc:
                 if token.pos_ == "VERB":
-                    span = (token.i, token.i)
+                    span = (token.i, token.i + 1)
                     for tspan in spans:
-                        if tspan[0] <= span[0] <= tspan[1]:
+                        if tspan[0] <= span[0] < tspan[1]:
                             spacy_verbs.add((i, j, span[0], span[1]))
                             break
             

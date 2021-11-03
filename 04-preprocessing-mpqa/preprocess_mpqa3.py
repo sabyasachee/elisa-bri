@@ -85,7 +85,7 @@ attitude = {
     "sarcastic": bool
 
     "sentence-index": int
-    "matched-targetFrame": None|targetFrame
+    "matched-targetframe": None|targetFrame
 }
 
 targetFrame = {

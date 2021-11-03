@@ -6,7 +6,7 @@ import os
 import json
 import config
 
-def make_folds(n_folds):
+def make_folds(n_folds, seed):
     mpqa3_doc_ids = sorted(open(os.path.join(config.MPQA3_FOLDER, "doclist")).read().strip().split("\n"))
     mpqa3_docs = []
 
@@ -18,10 +18,10 @@ def make_folds(n_folds):
     fold_size = int(len(mpqa3_docs)/n_folds)
     index = np.arange(len(mpqa3_docs))
     
-    np.random.seed(2)
+    np.random.seed(seed)
     np.random.shuffle(index)
     n_tuples_per_fold = np.zeros(n_folds)
-    n_sentences_per_fold = np.zeros(n_folds, dtype=int)
+    n_sentences_per_fold = np.zeros(n_folds)
     fold_records = []
 
     for i in range(n_folds):
@@ -39,4 +39,4 @@ def make_folds(n_folds):
     fold_info_df.to_csv(os.path.join(config.RESULTS_FOLDER, "mpqa3", "{}fold.csv".format(n_folds)), index=False)
 
 if __name__ == "__main__":
-    make_folds(2)
+    make_folds(2, 2)

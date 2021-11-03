@@ -15,7 +15,7 @@ def main():
     dev_dataset = OpinionDataset(dev_doc_ids)
     test_dataset = OpinionDataset(test_doc_ids)
 
-    train(train_dataset, dev_dataset, test_dataset)
+    # train(train_dataset, dev_dataset, test_dataset)
 
 if __name__ == "__main__":
     main()

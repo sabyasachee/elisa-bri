@@ -1,5 +1,105 @@
-# author = Sabyasachee Baruah
-# This script processes the MPQA 2.0
+'''
+author = Sabyasachee Baruah
+This script processes the MPQA 2.0 database.
+
+json schema of processed mpqa 2
+
+help:
+x = {...} means x is a dictionary
+x: [y] means x is a list of element-type y
+a|b|c means value can be a, or b, or c
+str, int are string and integer data-types
+
+schema:
+
+doc = {
+    "sentences": [sentence]
+    "text": str
+    "dse": [dse]
+    "ese": [ese]
+    "stats": stats
+}
+
+sentence = {
+    "text": str
+    "span": span
+}
+
+dse = {
+    "span": span
+    "attitude-link": [str]
+    "id": str|None
+    "nested-source": [str]
+    "non-redundant-nested-source": [str]
+    "intensity": "neutral"|"low"|"medium"|"high"|"extreme"|None
+    "implicit": bool
+    "expression-intensity": "neutral"|"low"|"medium"|"high"|"extreme"|None
+    "insubstantial": ["c1"|"c2"|"c3"]
+    "polarity": "neutral"|"positive"|"negative"|"both"|"uncertain-both"|"uncertain-neutral"|"uncertain-positive"|"uncertain-negative"|None
+    "annotation-uncertain": "somewhat-uncertain"|"very-uncertain"|None
+    "subjective-uncertain": "somewhat-uncertain"|"very-uncertain"|None
+
+    "sentence-index": None|int
+    "matched-source": None|"author"|"implicit"|agent
+    "matched-source-type": None|int
+    "matched-attitudes": [attitude]
+}
+
+ese = {
+    "span": span
+    "nested-source": [str]
+    "non-redundant-nested-source": [str]
+    "id": None|str
+    "targetFrame-link": None|str
+    "intensity": "low"|"medium"|"high"|"extreme"|None
+    "polarity": "neutral"|"positive"|"negative"|"both"|"uncertain-both"|"uncertain-neutral"|"uncertain-positive"|"uncertain-negative"|None
+    "es-uncertain": "somewhat-uncertain"|"very-uncertain"|None
+    "nested-source-uncertain": "somewhat-uncertain"|"very-uncertain"|None
+
+    "sentence-index": None|int
+    "matched-source": None|"author"|"implicit"|agent
+    "matched-source-type": None|int
+    "matched-targetFrame": None|targetFrame
+}
+
+agent = {
+    "span": span
+    "id": None|str
+    "nested-source": [str]
+    "non-redundant-nested-source": [str]
+    "agent-uncertain": "somewhat-uncertain"|"very-uncertain"|None
+
+    "sentence-index": int|None
+}
+
+attitude = {
+    "id": None|str
+    "span": span
+    "target-link": [str]
+    "attitude-type": "sentiment-neg"|"sentiment-pos"|"arguing-neg"|"arguing-pos"|"agree-neg"|"agree-pos"|"intention-neg"|"intention-pos"|"interior-sentiment-neg"|"interior-sentiment-pos"|"speculation"|"other-attitude"|None
+    "intensity": "low"|"low-medium"|"medium"|"medium-high"|"high"|"high-extreme"|"extreme"|None
+    "attitude-uncertain": "somewhat-uncertain"|"very-uncertain"|None
+    "inferred": bool
+    "repetition": bool
+    "contrast": bool
+    "sarcastic": bool
+
+    "sentence-index": int
+    "matched-targets": [target]
+}
+
+target = {
+    "span": span
+    "id": None|str
+    "target-uncertain": "somewhat-uncertain"|"very-uncertain"|None
+    "sentence-index": int|None
+}
+
+span = {
+    "start: int
+    "end": int
+}
+'''
 
 from collections import defaultdict, Counter
 import os

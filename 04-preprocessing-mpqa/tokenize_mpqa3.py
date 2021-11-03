@@ -99,13 +99,15 @@ def is_equal_token_indexes(token_index_1, token_index_2):
 def create_tokenized_tuples(doc_tuples, tokenized_sentences):
 
     n_tuples = len(doc_tuples)
-    n_sentiment_tuples = sum([attitude is not None and attitude["attitude-type"] is not None and attitude["attitude-type"].startswith("sentiment") for _, _, attitude, _, _, _, _, _ in doc_tuples])
+    n_sentiment_tuples = sum([attitude is not None and attitude["attitude-type"] is not None and attitude["attitude-type"].startswith("sentiment") for _, _, attitude, _, _, _, _, _, _ in doc_tuples])
     n_two_sentence_tuples = 0
     n_sentiment_two_sentence_tuples = 0
     n_tokenized_tuples = 0
     n_sentiment_tokenized_tuples = 0
 
-    for dse, holder, attitude, target, dse_index, holder_index, attitude_index, target_index in doc_tuples:
+    doc_tuple_index_to_sentence_dse_index = {}
+
+    for dti, (dse, holder, attitude, target, dse_index, holder_index, attitude_index, target_index, linking_index) in enumerate(doc_tuples):
 
         if attitude is not None and attitude["attitude-type"] is not None and target is not None and target_index is not None and holder is not None:
 
@@ -158,6 +160,15 @@ def create_tokenized_tuples(doc_tuples, tokenized_sentences):
 
                 if dse_span is not None or attitude_span is not None:
                     if (isinstance(holder, dict) and holder_index is not None and holder_index[0] == target_index[0]) or holder == "writer" or holder == "implicit":
+                        sentence_dse_index = (target_index[0], len(tokenized_sentence["dse"]))
+                        doc_tuple_index_to_sentence_dse_index[dti] = sentence_dse_index
+
+                        linked_to_index = -1
+                        if linking_index != -1 and linking_index in doc_tuple_index_to_sentence_dse_index:
+                            linked_to_sentence_dse_index = doc_tuple_index_to_sentence_dse_index[linking_index]
+                            if linked_to_sentence_dse_index[0] == target_index[0]:
+                                linked_to_index = linked_to_sentence_dse_index[1]
+
                         tokenized_sentence["dse"].append({
                             "dse-span": dse_span,
                             "dse-tokens": dse_tokens,
@@ -171,7 +182,8 @@ def create_tokenized_tuples(doc_tuples, tokenized_sentences):
                             "target-type": target_type,
                             "target-span": target_span,
                             "target-tokens": target_tokens,
-                            "attitude-type": attitude_type
+                            "attitude-type": attitude_type,
+                            "linked-to": linked_to_index
                         })
                         n_tokenized_tuples += 1
                         n_sentiment_tokenized_tuples += attitude_type.startswith("sentiment")
@@ -181,12 +193,15 @@ def create_tokenized_tuples(doc_tuples, tokenized_sentences):
         
     return n_tuples, n_sentiment_tuples, n_two_sentence_tuples, n_sentiment_two_sentence_tuples, n_tokenized_tuples, n_sentiment_tokenized_tuples
 
+def is_whitespace(text):
+    return re.match("^\s*$", text) is not None
+
 def correct_span(span, tokens, number_of_newline_characters):
 
-    while span[0] < span[1] and re.match("^\s+$", tokens[span[0]]):
+    while span[0] < span[1] and is_whitespace(tokens[span[0]]):
         span[0] += 1
     
-    while span[0] < span[1] and re.match("^\s+$", tokens[span[1]-1]):
+    while span[0] < span[1] and is_whitespace(tokens[span[1] - 1]):
         span[1] -= 1
     
     if span[0] < span[1]:
@@ -194,7 +209,7 @@ def correct_span(span, tokens, number_of_newline_characters):
         span[1] -= number_of_newline_characters[span[1]-1]
         return span
 
-def remove_newline_characters(tokenized_sentences):
+def remove_whitespace_tokens(tokenized_sentences):
 
     n_tuples_removed = 0
 
@@ -203,8 +218,9 @@ def remove_newline_characters(tokenized_sentences):
         number_of_newline_characters = [0 for _ in range(len(tokenized_sentence["tokens"]))]
         c = 0
         for i, token in enumerate(tokenized_sentence["tokens"]):
-            number_of_newline_characters[i] = c + (re.match("^\s+$", token) is not None)
-            c += re.match("^\s+$", token) is not None
+            flag = is_whitespace(token)
+            number_of_newline_characters[i] = c + flag
+            c += flag
 
         new_dse_arr = []
 
@@ -223,7 +239,8 @@ def remove_newline_characters(tokenized_sentences):
                 new_dse_arr.append(new_dse)
 
         tokenized_sentence["dse"] = new_dse_arr
-        tokenized_sentence["tokens"] = [token for token in tokenized_sentence["tokens"] if not re.match("^\s+$", token)]
+        tokenized_sentence["tokens"] = [token for token in tokenized_sentence["tokens"] if not is_whitespace(token)]
+        tokenized_sentence["text"] = re.sub("\s+", " ", tokenized_sentence["text"]).strip()
     
     return n_tuples_removed
 
@@ -288,26 +305,30 @@ def tokenize_mpqa3(mpqa3_folder, results_folder):
                     attitude_is_sentiment = attitude["attitude-type"] is not None and attitude["attitude-type"].startswith("sentiment")
 
                     if attitude["matched-targetframe"] is not None and len(attitude["matched-targetframe"]["matched-stargets"]) + len(attitude["matched-targetframe"]["matched-etargets"]) > 0:
-                        stargets = attitude["matched-targetframe"]["matched-stargets"]
-                        etargets = attitude["matched-targetframe"]["matched-etargets"] + [etarget for starget in stargets for etarget in starget["matched-etargets"]]
-
-                        for starget in stargets:
-                            starget_index = find_token_index_of_span(starget["sentence-index"], starget["span"], tokenized_sentences)
-                            doc_records.append([dse_index, holder_type, holder_index, attitude_index, attitude_is_sentiment, "starget", starget_index])
-                            doc_tuples.append([dse, holder, attitude, starget, dse_index, holder_index, attitude_index, starget_index])
                         
-                        for etarget in etargets:
+                        for starget in attitude["matched-targetframe"]["matched-stargets"]:
+                            starget_index = find_token_index_of_span(starget["sentence-index"], starget["span"], tokenized_sentences)
+                            linking_index = len(doc_tuples)
+                            doc_records.append([dse_index, holder_type, holder_index, attitude_index, attitude_is_sentiment, "starget", starget_index])
+                            doc_tuples.append([dse, holder, attitude, starget, dse_index, holder_index, attitude_index, starget_index, -1])
+
+                            for etarget in starget["matched-etargets"]:
+                                etarget_index = find_token_index_of_span(etarget["sentence-index"], etarget["span"], tokenized_sentences)
+                                doc_records.append([dse_index, holder_type, holder_index, attitude_index, attitude_is_sentiment, etarget["type"], etarget_index])
+                                doc_tuples.append([dse, holder, attitude, etarget, dse_index, holder_index, attitude_index, etarget_index, linking_index])
+                        
+                        for etarget in attitude["matched-targetframe"]["matched-etargets"]:
                             etarget_index = find_token_index_of_span(etarget["sentence-index"], etarget["span"], tokenized_sentences)
                             doc_records.append([dse_index, holder_type, holder_index, attitude_index, attitude_is_sentiment, etarget["type"], etarget_index])
-                            doc_tuples.append([dse, holder, attitude, etarget, dse_index, holder_index, attitude_index, etarget_index])
+                            doc_tuples.append([dse, holder, attitude, etarget, dse_index, holder_index, attitude_index, etarget_index, -1])
 
                     else:
                         doc_records.append([dse_index, holder_type, holder_index, attitude_index, False, None, None])
-                        doc_tuples.append([dse, holder, attitude, None, dse_index, holder_index, attitude_index, None])
+                        doc_tuples.append([dse, holder, attitude, None, dse_index, holder_index, attitude_index, None, -1])
 
             else:
                 doc_records.append([dse_index, holder_type, holder_index, None, False, None, None])
-                doc_tuples.append([dse, holder, None, None, dse_index, holder_index, None, None])
+                doc_tuples.append([dse, holder, None, None, dse_index, holder_index, None, None, -1])
 
         doc_n_tuples, doc_n_sentiment_tuples, doc_n_two_sentence_tuples, doc_n_sentiment_two_sentence_tuples, doc_n_tokenized_tuples, doc_n_sentiment_tokenized_tuples = create_tokenized_tuples(doc_tuples, tokenized_sentences)
         n_tuples += doc_n_tuples
@@ -317,7 +338,7 @@ def tokenize_mpqa3(mpqa3_folder, results_folder):
         n_tokenized_tuples += doc_n_tokenized_tuples
         n_sentiment_tokenized_tuples += doc_n_sentiment_tokenized_tuples
         
-        doc_n_tuples_removed = remove_newline_characters(tokenized_sentences)
+        doc_n_tuples_removed = remove_whitespace_tokens(tokenized_sentences)
         n_tokenized_tuples_after_correction += doc_n_tokenized_tuples - doc_n_tuples_removed
 
         records.extend(doc_records)
