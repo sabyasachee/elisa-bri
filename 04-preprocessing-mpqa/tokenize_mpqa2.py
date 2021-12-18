@@ -46,7 +46,7 @@ def create_tokenized_tuples(doc_tuples, tokenized_sentences):
             target_type = "span"
             target_tokens = tokens[target_span[0]: target_span[1]]
 
-            if target_type in ["span", "entity", "event"] and ((isinstance(holder, dict) and holder_index is not None) or holder == "writer" or holder == "implicit"):
+            if ((isinstance(holder, dict) and holder_index is not None) or holder == "writer" or holder == "implicit"):
 
                 if isinstance(holder, dict):
                     holder_span = [holder_index[1], holder_index[2]]
@@ -84,6 +84,7 @@ def create_tokenized_tuples(doc_tuples, tokenized_sentences):
                     attitude_tokens = []
 
                 if dse_span is not None or attitude_span is not None:
+                    
                     if (isinstance(holder, dict) and holder_index is not None and holder_index[0] == target_index[0]) or holder == "writer" or holder == "implicit":
                         tokenized_sentences[target_index[0]]["dse"].append({
                             "dse-span": dse_span,
@@ -91,7 +92,7 @@ def create_tokenized_tuples(doc_tuples, tokenized_sentences):
                             "attitude-span": attitude_span,
                             "attitude-tokens": attitude_tokens,
                             "opinion-span": dse_span if dse_span is not None else attitude_span,
-                            "opinion-tokens": dse_tokens if dse_span is not None else attitude_span,
+                            "opinion-tokens": dse_tokens if dse_span is not None else attitude_tokens,
                             "holder-type": holder_type,
                             "holder-span": holder_span,
                             "holder-tokens": holder_tokens,
@@ -102,6 +103,7 @@ def create_tokenized_tuples(doc_tuples, tokenized_sentences):
                         })
                         n_tokenized_tuples += 1
                         n_sentiment_tokenized_tuples += attitude_type.startswith("sentiment")
+                    
                     if (isinstance(holder, dict) and holder_index is not None and abs(holder_index[0] - target_index[0]) < 2) or holder == "writer" or holder == "implicit":
                         n_two_sentence_tuples += 1
                         n_sentiment_two_sentence_tuples += attitude_type.startswith("sentiment")
@@ -111,18 +113,22 @@ def create_tokenized_tuples(doc_tuples, tokenized_sentences):
 def is_whitespace(text):
     return re.match("^\s*$", text) is not None
 
-def correct_span(span, tokens, number_of_newline_characters):
+def correct_span(span, tokens, n_previous_whitespace_tokens):
 
-    while span[0] < span[1] and is_whitespace(tokens[span[0]]):
-        span[0] += 1
+    i = span[0]
+    j = span[1] - 1
+    n = len(tokens)
+
+    while i < n and is_whitespace(tokens[i]):
+        i += 1
     
-    while span[0] < span[1] and is_whitespace(tokens[span[1]-1]):
-        span[1] -= 1
+    while 0 <= j and is_whitespace(tokens[j]):
+        j -= 1
     
-    if span[0] < span[1]:
-        span[0] -= number_of_newline_characters[span[0]]
-        span[1] -= number_of_newline_characters[span[1]-1]
-        return span
+    if 0 <= i <= j < n:
+        i = i - n_previous_whitespace_tokens[i]
+        j = j - n_previous_whitespace_tokens[j]
+        return [i, j + 1]
 
 def remove_whitespace_tokens(tokenized_sentences):
 
@@ -130,31 +136,35 @@ def remove_whitespace_tokens(tokenized_sentences):
 
     for tokenized_sentence in tokenized_sentences:
         
-        number_of_newline_characters = [0 for _ in range(len(tokenized_sentence["tokens"]))]
+        n_previous_whitespace_tokens = [0 for _ in range(len(tokenized_sentence["tokens"]))]
+        non_whitespace_tokens = []
         c = 0
         for i, token in enumerate(tokenized_sentence["tokens"]):
             flag = is_whitespace(token)
-            number_of_newline_characters[i] = c + flag
+            n_previous_whitespace_tokens[i] = c + flag
+            if not flag:
+                non_whitespace_tokens.append(token)
             c += flag
 
         new_dse_arr = []
 
         for dse in tokenized_sentence["dse"]:
             new_dse = dse
-            for key in ["dse-span", "attitude-span", "holder-span", "target-span", "opinion-span"]:
-                span = dse[key]
+            for key in ["dse", "attitude", "holder", "target", "opinion"]:
+                span = dse[key + "-span"]
                 if span is not None:
-                    corrected_span = correct_span(span, tokenized_sentence["tokens"], number_of_newline_characters)
+                    corrected_span = correct_span(span, tokenized_sentence["tokens"], n_previous_whitespace_tokens)
                     if corrected_span is None:
                         n_tuples_removed += 1
                         break
                     else:
-                        new_dse[key] = corrected_span
+                        new_dse[key + "-span"] = corrected_span
+                        new_dse[key + "-tokens"] = non_whitespace_tokens[slice(*corrected_span)]
             else:
                 new_dse_arr.append(new_dse)
 
         tokenized_sentence["dse"] = new_dse_arr
-        tokenized_sentence["tokens"] = [token for token in tokenized_sentence["tokens"] if not is_whitespace(token)]
+        tokenized_sentence["tokens"] = non_whitespace_tokens
         tokenized_sentence["text"] = re.sub("\s+", " ", tokenized_sentence["text"]).strip()
     
     return n_tuples_removed
@@ -222,7 +232,7 @@ def tokenize_mpqa2(mpqa2_folder, results_folder):
                             doc_tuples.append([dse, holder, attitude, target, dse_index, holder_index, attitude_index, target_index])
                         
                     else:
-                        doc_records.append([dse_index, holder_type, holder_index, attitude_index, False, None, None])
+                        doc_records.append([dse_index, holder_type, holder_index, attitude_index, attitude_is_sentiment, None, None])
                         doc_tuples.append([dse, holder, attitude, None, dse_index, holder_index, attitude_index, None])
 
             else:
